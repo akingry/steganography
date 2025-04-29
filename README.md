@@ -16,7 +16,7 @@ A browser-based tool to hide compressed and optionally encrypted text inside ima
 - Input: .jpg, .jpeg, .png, .gif, .webp, .bmp, .tif, .tiff
 - Output: .png
 - Data written to least significant bits of RGB channels
-- Full client-side operation (no uploads)
+- Full client-side
 
 ## License
 
