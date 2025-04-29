@@ -7,6 +7,10 @@ A browser-based tool to hide compressed and optionally encrypted text inside ima
 - LZ-String compression
 - Canvas API
 
+## Versions
+KTSteg.html encodes plain text
+KTStegRich.html encodes formatted text and images
+
 ## Features
 
 - LZ-String compression
