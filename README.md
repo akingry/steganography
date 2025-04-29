@@ -1,4 +1,4 @@
-# Simple Steganography Web App
+# Kingry Tools: Steganography Web App
 
 A browser-based tool to hide compressed and optionally encrypted text inside images via LSB pixel manipulation.
 
