@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kingry Tools: Steganography</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }
+  h1 { text-align: center; }
+  .container { display: flex; flex-wrap: wrap; justify-content: center; gap: 40px; }
+  .section { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); width: 360px; }
+  textarea { width: 100%; height: 200px; margin-top: 10px; }
+  input, button { width: 100%; padding: 8px; margin-top: 8px; }
+  canvas { display: none; }
+  #byteInfo { margin-top: 5px; font-size: 14px; }
+  #sourcePreview { display: block; margin: 10px auto; max-width: 100%; }
+  .drop-zone {
+    border: 2px dashed #888;
+    border-radius: 6px;
+    padding: 12px;
+    text-align: center;
+    color: #555;
+    margin-top: 10px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+  }
+  .drop-zone.dragover {
+    background-color: #cce5ff;
+    border-color: #007bff;
+  }
+</style>
+</head>
+<body>
+<h1>Kingry Tools: Steganography</h1>
+<div class="container">
+
+<div class="section">
+  <h2>Hide Text</h2>
+  <div class="drop-zone" id="dropZone">Drop image here or click to select</div>
+  <input type="file" id="coverInput" accept="image/*" onchange="handleCoverImage()" style="display:none">
+  <img id="sourcePreview">
+  <textarea id="hideMessage" placeholder="Enter message..." oninput="limitInput()"></textarea>
+  <div id="byteInfo">Bytes: 0</div>
+  <input type="password" id="hidePassword" placeholder="Password (optional)">
+  <button id="hideButton" onclick="hideText()" disabled>Hide Text and Download</button>
+</div>
+
+<div class="section">
+  <h2>Extract Text</h2>
+  <input type="file" id="stegoInput" accept="image/*" onchange="enableExtractButton()">
+  <input type="password" id="extractPassword" placeholder="Password (if used)">
+  <button id="extractButton" onclick="extractText()" disabled>Extract Text</button>
+  <textarea id="extractedMessage" placeholder="Extracted message will appear here..."></textarea>
+</div>
+
+</div>
+<canvas id="canvas"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/lz-string@1.4.4/libs/lz-string.min.js"></script>
+<script>
+let maxBytes = 0;
+
+const dropZone = document.getElementById('dropZone');
+
+dropZone.addEventListener('click', () => {
+  document.getElementById('coverInput').click();
+});
+
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('dragover');
+  e.dataTransfer.dropEffect = 'copy';
+});
+
+dropZone.addEventListener('dragleave', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+});
+
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) {
+    document.getElementById('coverInput').files = e.dataTransfer.files;
+    handleCoverImage();
+  }
+});
+
+function handleCoverImage() {
+  const coverInput = document.getElementById('coverInput').files[0];
+  if (!coverInput) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      maxBytes = Math.floor((img.width * img.height * 3) / 8) - 4;
+      maxBytes = Math.floor(maxBytes * 3 / 4);
+      limitInput();
+    };
+    img.src = e.target.result;
+    const preview = document.getElementById('sourcePreview');
+    preview.src = e.target.result;
+    preview.style.display = 'block';
+  };
+  reader.readAsDataURL(coverInput);
+}
+
+function limitInput() {
+  const messageBox = document.getElementById('hideMessage');
+  const byteInfo = document.getElementById('byteInfo');
+  const hideButton = document.getElementById('hideButton');
+  const coverSelected = document.getElementById('coverInput').files.length > 0;
+  let message = messageBox.value;
+  let encoder = new TextEncoder();
+  let encoded = encoder.encode(message);
+  if (maxBytes > 0 && encoded.length > maxBytes) {
+    let left = 0, right = message.length, mid;
+    while (left < right) {
+      mid = Math.floor((left + right) / 2);
+      const subEncoded = encoder.encode(message.substring(0, mid));
+      if (subEncoded.length <= maxBytes) {
+        left = mid + 1;
+      } else {
+        right = mid;
+      }
+    }
+    message = message.substring(0, left - 1);
+    encoded = encoder.encode(message);
+    messageBox.value = message;
+  }
+  const realLength = encoded.length;
+  byteInfo.textContent = `Bytes: ${realLength} / ${maxBytes}`;
+  byteInfo.style.color = realLength > maxBytes ? 'red' : 'black';
+  hideButton.disabled = !(coverSelected && realLength > 0 && realLength <= maxBytes);
+}
+
+function enableExtractButton() {
+  const stegoSelected = document.getElementById('stegoInput').files.length > 0;
+  document.getElementById('extractButton').disabled = !stegoSelected;
+}
+
+function xorEncryptDecrypt(data, key) {
+  const keyBytes = new TextEncoder().encode(key);
+  return data.map((byte, i) => byte ^ keyBytes[i % keyBytes.length]);
+}
+
+function intToBinArray(number, bits) {
+  return Array.from({ length: bits }, (_, i) => (number >> (bits - i - 1)) & 1);
+}
+
+function binArrayToInt(bits) {
+  return bits.reduce((acc, bit) => (acc << 1) | bit, 0);
+}
+
+function hideText() {
+  const coverInput = document.getElementById('coverInput').files[0];
+  let message = document.getElementById('hideMessage').value;
+  const password = document.getElementById('hidePassword').value;
+  if (!coverInput || !message) {
+    alert('Please select a cover image and enter a message.');
+    return;
+  }
+  message = LZString.compressToUTF16(message);
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.getElementById('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      let textBytes = new TextEncoder().encode(message);
+      if (password) {
+        let encryptedBytes = xorEncryptDecrypt(textBytes, password);
+        let binaryString = '';
+        encryptedBytes.forEach(b => binaryString += String.fromCharCode(b));
+        textBytes = new TextEncoder().encode(btoa(binaryString));
+      }
+      const imgData = ctx.getImageData(0, 0, img.width, img.height);
+      const pixels = imgData.data;
+      const textLen = textBytes.length;
+      const bits = [...intToBinArray(textLen, 32)];
+      for (let byte of textBytes) {
+        bits.push(...intToBinArray(byte, 8));
+      }
+      if (bits.length > pixels.length / 4 * 3) {
+        alert('Message is too large for this image.');
+        return;
+      }
+      let bitIndex = 0;
+      for (let i = 0; i < pixels.length; i += 4) {
+        if (bitIndex < bits.length) { pixels[i] = (pixels[i] & ~1) | bits[bitIndex++]; }
+        if (bitIndex < bits.length) { pixels[i+1] = (pixels[i+1] & ~1) | bits[bitIndex++]; }
+        if (bitIndex < bits.length) { pixels[i+2] = (pixels[i+2] & ~1) | bits[bitIndex++]; }
+      }
+      ctx.putImageData(imgData, 0, 0);
+      setTimeout(() => {
+        const link = document.createElement('a');
+        link.download = 'stego_image.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+      }, 50);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(coverInput);
+}
+
+function extractText() {
+  const stegoInput = document.getElementById('stegoInput').files[0];
+  const password = document.getElementById('extractPassword').value;
+  if (!stegoInput) {
+    alert('Please select a stego image.');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.getElementById('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const imgData = ctx.getImageData(0, 0, img.width, img.height);
+      const pixels = imgData.data;
+      const bits = [];
+      for (let i = 0; i < pixels.length; i += 4) {
+        bits.push(pixels[i] & 1);
+        bits.push(pixels[i+1] & 1);
+        bits.push(pixels[i+2] & 1);
+      }
+      const textLen = binArrayToInt(bits.slice(0, 32));
+      const textBits = bits.slice(32, 32 + textLen * 8);
+      const textBytes = [];
+      for (let i = 0; i < textBits.length; i += 8) {
+        textBytes.push(binArrayToInt(textBits.slice(i, i+8)));
+      }
+      let extracted = new Uint8Array(textBytes);
+      try {
+        if (password) {
+          let binaryString = atob(new TextDecoder().decode(extracted));
+          const binaryBytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            binaryBytes[i] = binaryString.charCodeAt(i);
+          }
+          extracted = new TextDecoder().decode(xorEncryptDecrypt(binaryBytes, password));
+        } else {
+          extracted = new TextDecoder().decode(extracted);
+        }
+        extracted = LZString.decompressFromUTF16(extracted);
+        document.getElementById('extractedMessage').value = extracted;
+      } catch (e) {
+        alert('Failed to decode. Possibly wrong password or corrupted image.');
+      }
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(stegoInput);
+}
+</script>
+</body>
+</html>
