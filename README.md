@@ -8,8 +8,8 @@ A browser-based tool to hide compressed and optionally encrypted text inside ima
 - Canvas API
 
 ## Versions
-KTSteg.html encodes plain text
-KTStegRich.html encodes formatted text and images
+- KTSteg.html encodes plain text
+- KTStegRich.html encodes formatted text and images
 
 ## Features
 
