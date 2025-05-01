@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kingry Tools: Steganography</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }
+  h1 { text-align: center; }
+  .container { display: flex; flex-wrap: wrap; justify-content: center; gap: 40px; }
+  .section { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); width: 360px; }
+  textarea { width: 100%; height: 200px; margin-top: 10px; font-family: monospace; white-space: pre; }
+  input, button { width: 100%; padding: 8px; margin-top: 8px; }
+  canvas { display: none; }
+  #byteInfo, #resultContainer h3 { margin-top: 10px; font-size: 14px; }
+  img.preview { display: none; margin: 10px auto; max-width: 100%; cursor: pointer; }
+  .drop-zone {
+    border: 2px dashed #888;
+    border-radius: 6px;
+    padding: 12px;
+    text-align: center;
+    color: #555;
+    margin-top: 10px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+  }
+  .drop-zone.dragover {
+    background-color: #cce5ff;
+    border-color: #007bff;
+  }
+</style>
+</head>
+<body>
+<h1>Kingry Tools: Steganography</h1>
+<div class="container">
+
+<div class="section">
+  <h2>Hide Text</h2>
+  <div class="drop-zone" id="dropZone">Drop image here or click to select</div>
+  <input type="file" id="coverInput" accept="image/*" style="display:none">
+  <img id="sourcePreview" class="preview">
+  <textarea id="hideMessage" placeholder="Enter message..." oninput="limitInput()"></textarea>
+  <div id="byteInfo">Bytes: 0</div>
+  <input type="password" id="hidePassword" placeholder="Password (optional)">
+  <button id="hideButton" onclick="hideText()" disabled>Hide Text</button>
+  <div id="resultContainer" style="text-align:center;">
+    <h3>Result Image</h3>
+    <img id="resultImage" class="preview">
+  </div>
+</div>
+
+<div class="section">
+  <h2>Extract Text</h2>
+  <input type="file" id="stegoInput" accept="image/*" onchange="previewStego()">
+  <img id="stegoPreview" class="preview">
+  <input type="password" id="extractPassword" placeholder="Password (if used)">
+  <button id="extractButton" onclick="extractText()" disabled>Extract Text</button>
+  <textarea id="extractedMessage" placeholder="Extracted message will appear here..."></textarea>
+</div>
+
+</div>
+<canvas id="canvas"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/lz-string@1.4.4/libs/lz-string.min.js"></script>
+<script>
+let maxBytes = 0;
+const dropZone = document.getElementById('dropZone');
+const sourcePreview = document.getElementById('sourcePreview');
+const resultImage = document.getElementById('resultImage');
+const stegoPreview = document.getElementById('stegoPreview');
+
+// Cover image handlers
+dropZone.addEventListener('click', () => coverInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', e => { e.preventDefault(); dropZone.classList.remove('dragover'); });
+dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('dragover'); coverInput.files = e.dataTransfer.files; handleCoverImage(); });
+
+const coverInput = document.getElementById('coverInput');
+coverInput.addEventListener('change', handleCoverImage);
+function handleCoverImage() {
+  const file = coverInput.files[0]; if (!file) return;
+  const reader = new FileReader(); reader.onload = e => {
+    const img = new Image(); img.onload = () => {
+      maxBytes = Math.floor((img.width*img.height*3)/8)*3/4;
+      limitInput();
+    };
+    img.src = e.target.result;
+    sourcePreview.src = e.target.result;
+    sourcePreview.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+
+// Stego preview handler
+function previewStego() {
+  const file = stegoInput.files[0];
+  if (!file) return;
+  const reader = new FileReader(); reader.onload = e => {
+    stegoPreview.src = e.target.result;
+    stegoPreview.style.display = 'block';
+    extractButton.disabled = false;
+  };
+  reader.readAsDataURL(file);
+}
+
+// Input references
+const stegoInput = document.getElementById('stegoInput');
+const extractButton = document.getElementById('extractButton');
+const hideButton = document.getElementById('hideButton');
+
+// Limit input
+function limitInput() {
+  const msgBox = document.getElementById('hideMessage');
+  let msg = msgBox.value;
+  let enc = new TextEncoder().encode(msg);
+  if (maxBytes && enc.length > maxBytes) {
+    let l=0, r=msg.length;
+    while (l<r) { let m=(l+r)>>1; if (new TextEncoder().encode(msg.slice(0,m)).length<=maxBytes) l=m+1; else r=m; }
+    msg = msg.slice(0,l-1);
+    msgBox.value = msg;
+    enc = new TextEncoder().encode(msg);
+  }
+  const info = document.getElementById('byteInfo');
+  info.textContent = `Bytes: ${enc.length} / ${maxBytes}`;
+  info.style.color = enc.length>maxBytes?'red':'black';
+  hideButton.disabled = !(coverInput.files.length && enc.length && enc.length<=maxBytes);
+}
+
+// Encryption helpers
+function xorEncryptDecrypt(data,key){const k=new TextEncoder().encode(key);return data.map((b,i)=>b^k[i%k.length]);}
+function intToBinArray(n,b){return Array.from({length:b},(_,i)=>(n>>(b-i-1))&1);}function binArrayToInt(a){return a.reduce((x,y)=>(x<<1)|y,0);}  
+
+// Hide logic
+function hideText() {
+  const file = coverInput.files[0];
+  let msg = document.getElementById('hideMessage').value;
+  const pwd = document.getElementById('hidePassword').value;
+  if (!file || !msg) return;
+  msg = LZString.compressToUTF16(msg);
+  const reader = new FileReader(); reader.onload = e => {
+    const img = new Image(); img.onload = () => {
+      const c = document.getElementById('canvas'); c.width=img.width; c.height=img.height;
+      const ctx = c.getContext('2d'); ctx.drawImage(img,0,0);
+      let bytes = new TextEncoder().encode(msg);
+      if (pwd) { let enc = xorEncryptDecrypt(bytes,pwd); bytes = new TextEncoder().encode(btoa(String.fromCharCode(...enc))); }
+      const data = ctx.getImageData(0,0,img.width,img.height);
+      const p = data.data; const bits=[...intToBinArray(bytes.length,32)]; bytes.forEach(b=>bits.push(...intToBinArray(b,8)));
+      for(let i=0, idx=0; i<p.length && idx<bits.length; i+=4) { p[i]=p[i]&~1|bits[idx++]; p[i+1]=p[i+1]&~1|bits[idx++]; p[i+2]=p[i+2]&~1|bits[idx++]; }
+      ctx.putImageData(data,0,0);
+      const dataUrl = c.toDataURL('image/png');
+      resultImage.src = dataUrl;
+      resultImage.style.display = 'block';
+      resultImage.onclick = () => window.open(dataUrl, '_blank');
+    }; img.src = e.target.result;
+  }; reader.readAsDataURL(file);
+}
+
+// Extract logic
+function extractText() {
+  const file = stegoInput.files[0]; const pwd = document.getElementById('extractPassword').value;
+  if (!file) return;
+  const reader = new FileReader(); reader.onload = e => {
+    const img = new Image(); img.onload = () => {
+      const c = document.getElementById('canvas'); c.width=img.width; c.height=img.height;
+      const ctx = c.getContext('2d'); ctx.drawImage(img,0,0);
+      const p = ctx.getImageData(0,0,img.width,img.height).data;
+      const bits=[]; for(let i=0;i<p.length;i+=4) bits.push(p[i]&1,p[i+1]&1,p[i+2]&1);
+      const len = binArrayToInt(bits.slice(0,32));
+      const chunk = bits.slice(32,32+len*8);
+      const bytes=[]; for(let i=0;i<chunk.length;i+=8) bytes.push(binArrayToInt(chunk.slice(i,i+8)));
+      let out = new Uint8Array(bytes);
+      try {
+        let str;
+        if (pwd) {
+          const bin = atob(new TextDecoder().decode(out));
+          const raw = new Uint8Array(bin.length); [...bin].forEach((ch,i)=>raw[i]=ch.charCodeAt(0));
+          str = new TextDecoder().decode(xorEncryptDecrypt(raw,pwd));
+        } else str = new TextDecoder().decode(out);
+        document.getElementById('extractedMessage').value = LZString.decompressFromUTF16(str);
+      } catch {
+        alert('Failed to decode.');
+      }
+    }; img.src = e.target.result;
+  }; reader.readAsDataURL(file);
+}
+</script>
+</body>
+</html>
